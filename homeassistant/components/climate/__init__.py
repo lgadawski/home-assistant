@@ -599,6 +599,7 @@ class ClimateDevice(Entity):
 
         This method must be run in the event loop and returns a coroutine.
         """
+
         return self.hass.loop.run_in_executor(
             None, ft.partial(self.set_temperature, **kwargs))
 

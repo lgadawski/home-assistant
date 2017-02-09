@@ -130,3 +130,15 @@ ecobee_resume_program:
     resume_all:
       description: Resume all events and return to the scheduled program. This default to false which removes only the top event.
       example: true
+
+generic_thermostat_set_tolerance:
+  description: Set the temperature tolerance
+
+  fields:
+    entity_id:
+      description: Name(s) of entities to change
+      example: 'climate.kitchen'
+
+    tolerance:
+      description: New value of temperature tolerance
+      example: 1.5

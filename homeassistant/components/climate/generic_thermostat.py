@@ -7,12 +7,14 @@ https://home-assistant.io/components/climate.generic_thermostat/
 import logging
 
 import voluptuous as vol
+from os import path
 
 from homeassistant.components import switch
 from homeassistant.components.climate import (
-    STATE_HEAT, STATE_COOL, STATE_IDLE, ClimateDevice, PLATFORM_SCHEMA)
+    STATE_HEAT, STATE_COOL, STATE_IDLE, ClimateDevice, PLATFORM_SCHEMA, DOMAIN)
+from homeassistant.config import load_yaml_config_file
 from homeassistant.const import (
-    ATTR_UNIT_OF_MEASUREMENT, STATE_ON, STATE_OFF, ATTR_TEMPERATURE)
+    ATTR_UNIT_OF_MEASUREMENT, STATE_ON, STATE_OFF, ATTR_TEMPERATURE, ATTR_ENTITY_ID)
 from homeassistant.helpers import condition
 from homeassistant.helpers.event import track_state_change
 import homeassistant.helpers.config_validation as cv
@@ -34,6 +36,12 @@ CONF_AC_MODE = 'ac_mode'
 CONF_MIN_DUR = 'min_cycle_duration'
 CONF_TOLERANCE = 'tolerance'
 
+SERVICE_SET_TOLERANCE = 'generic_thermostat_set_tolerance'
+
+SET_TOLERANCE_SCHEMA = vol.Schema({
+    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Required(CONF_TOLERANCE): vol.Coerce(float),
+})
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HEATER): cv.entity_id,
@@ -60,9 +68,34 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     min_cycle_duration = config.get(CONF_MIN_DUR)
     tolerance = config.get(CONF_TOLERANCE)
 
-    add_devices([GenericThermostat(
-        hass, name, heater_entity_id, sensor_entity_id, min_temp, max_temp,
-        target_temp, ac_mode, min_cycle_duration, tolerance)])
+    devices = [GenericThermostat(hass, name, heater_entity_id,
+                                 sensor_entity_id, min_temp, max_temp,
+                                 target_temp, ac_mode,
+                                 min_cycle_duration, tolerance)]
+    add_devices(devices)
+
+    def tolerance_set_service(service):
+        entity_id = service.data.get(ATTR_ENTITY_ID)
+        ser_tolerance = service.data[CONF_TOLERANCE]
+
+        if entity_id:
+            target_thermostats = [device for device in devices
+                                  if device.entity_id in entity_id]
+        else:
+            target_thermostats = devices
+
+        for thermostat in target_thermostats:
+            thermostat.set_tolerance(float(ser_tolerance))
+
+            thermostat.update_ha_state(True)
+
+    descriptions = load_yaml_config_file(
+        path.join(path.dirname(__file__), 'services.yaml'))
+
+    hass.services.register(
+        DOMAIN, SERVICE_SET_TOLERANCE, tolerance_set_service,
+        descriptions.get(SERVICE_SET_TOLERANCE),
+        schema=SET_TOLERANCE_SCHEMA)
 
 
 class GenericThermostat(ClimateDevice):
@@ -131,11 +164,25 @@ class GenericThermostat(ClimateDevice):
     def set_temperature(self, **kwargs):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
+
+        _LOGGER.info("Set new target thermostat temperature to - '" + str(temperature) + "'")
+
         if temperature is None:
             return
         self._target_temp = temperature
         self._control_heating()
         self.schedule_update_ha_state()
+
+    def set_tolerance(self, tolerance):
+        _LOGGER.info("Set new target thermostat tolerance to - '" + str(tolerance) + "'")
+
+        self._tolerance = tolerance
+        self._control_heating()
+        self.schedule_update_ha_state()
+
+    @property
+    def tolerance(self):
+        return self._tolerance
 
     @property
     def min_temp(self):
